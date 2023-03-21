@@ -9,6 +9,10 @@
 const fetch = require('node-fetch');
 
 const puppeteer = require('puppeteer');
+const functions = require('firebase-functions');
+const admin = require('firebase-admin');
+
+admin.initializeApp(functions.config().firebase);
 
 exports.scrapeGoogle = async (req, res) => {
 
@@ -43,3 +47,23 @@ exports.scrapeGoogle = async (req, res) => {
 
 
 
+exports.addNewData = functions.https.onRequest(async (req, res) => {
+    try {
+        // Firestoreコレクションを参照
+        const collectionRef = admin.firestore().collection('podcasts');
+
+        // データを作成
+        const newData = {
+            headline: 'Fantasy 606 podcast: Free hit fishing across the pond',
+            url: 'https://www.bbc.co.uk/sounds/play/p0f90zph',
+        };
+
+        // Firestoreにデータを登録
+        const docRef = await collectionRef.add(newData);
+        const data = await docRef.get();
+        res.send(`Data added with ID: ${docRef.id} -> ${JSON.stringify(data.data())}`);
+    } catch (error) {
+        console.log(error);
+        res.status(500).send('Error adding data');
+    }
+});
