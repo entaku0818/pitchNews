@@ -70,3 +70,50 @@ async function addNewData(news) {
         throw new functions.https.HttpsError('unknown', 'Error adding data');
     }
 }
+
+exports.scrapeGooglePubSub = functions.pubsub.topic('my-topic').onPublish(async (message) => {
+    try {
+        const browser = await puppeteer.launch();
+        const page = await browser.newPage();
+
+        await page.goto('https://www.bbc.com/sport/football', { waitUntil: 'networkidle2' });
+
+        // ニュースの見出しと画像URLを取得する
+        const news = await page.$$eval('.gs-c-promo', newsList => {
+            return newsList.map(news => {
+                const headline = news.querySelector('.gs-c-promo-heading__title').textContent;
+                const img = news.querySelector('img[srcset]') ? news.querySelector('img[srcset]').srcset.split(' ')[0] : null;
+                const url = news.querySelector('a[href]').href;
+                const summary = news.querySelector('.gs-c-promo-summary') ? news.querySelector('.gs-c-promo-summary').textContent : null;
+
+                return { headline, img, url, summary };
+            });
+        });
+
+        console.log(news);
+
+        // ブラウザを閉じる
+        await browser.close();
+
+        // Firestoreにデータを登録する
+        await addNewData(news);
+
+
+    } catch (error) {
+        console.error(error);
+        throw new functions.https.HttpsError('unknown', error.toString());
+    }
+});
+
+exports.testScrapeGooglePubSub = functions.https.onRequest(async (req, res) => {
+
+    try {
+        // テスト用のPub/Subメッセージを作成してトリガーを呼び出す
+        await exports.scrapeGooglePubSub("");
+
+        res.status(200).send('Pub/Sub function triggered successfully.');
+    } catch (error) {
+        console.error(error);
+        res.status(500).send('Error triggering Pub/Sub function.');
+    }
+});
