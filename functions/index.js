@@ -60,13 +60,23 @@ async function addNewData(news, sourceSite) {
 
         // Firestoreにデータを登録
         const promises = news.map(async (article) => {
+            const url = article.url;
+
+            // 既に同じURLが登録されているかチェックする
+            const existingDoc = await collectionRef.where('url', '==', url).limit(1).get();
+            if (!existingDoc.empty) {
+                console.log(`URL already exists, skipping: ${url}`);
+                return;
+            }
+
             const docRef = await collectionRef.add({
                 title: article.headline,
                 imageUrl: article.img,
-                url: article.url,
+                url: url,
                 description: article.summary,
                 sourceSite: sourceSite,
             });
+
             const data = await docRef.get();
             console.log(`Data added with ID: ${docRef.id} -> ${JSON.stringify(data.data())}`);
         });
