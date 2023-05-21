@@ -15,12 +15,14 @@ const admin = require('firebase-admin');
 admin.initializeApp(functions.config().firebase);
 exports.scrapeGoogle = functions.https.onRequest(async (req, res) => {
     try {
-        const news = await scrapeNews();
-        console.log(news);
+        const newsBBC = await scrapeNews();
+        const newsSoccerKing = await scrapeSoccerKing();
+
+        const combinedNews = newsBBC.concat(newsSoccerKing);
 
 
 
-        res.status(200).send(news);
+        res.status(200).send(combinedNews);
     } catch (error) {
         console.error(error);
         res.status(500).send('Error scraping data');
@@ -51,6 +53,37 @@ async function scrapeNews() {
             }).filter(news => news !== null);
         });
         await addNewData(news, "www.bbc.com");
+        return news;
+    } finally {
+        await page.close();
+        await browser.close();
+    }
+}
+
+async function scrapeSoccerKing() {
+    const browser = await puppeteer.launch();
+    const page = await browser.newPage();
+
+    try {
+        await page.goto('https://www.soccer-king.jp/news/world', { waitUntil: 'networkidle2' });
+
+        const news = await page.$$eval('.article_list.list_clm-listpage li', newsList => {
+            return newsList.map(news => {
+                const headline = news.querySelector('.tit').textContent;
+                const imgElement = news.querySelector('.img_box .img');
+                const img = imgElement ? imgElement.style.backgroundImage.match(/url\((.*?)\)/)[1].replace(/['"]+/g, '') : null;
+                const url = news.querySelector('a').href;
+                const category = news.querySelector('.cate').textContent;
+                const author = news.querySelector('.outh').textContent;
+                const summary = news.querySelector('.tit').textContent;
+
+
+                return { headline, img, url, summary, category, author };
+            }).filter(news => news !== null);
+        });
+
+        await addNewData(news, "www.soccer-king.jp");
+        console.log("www.soccer-king.jp", news);
         return news;
     } finally {
         await page.close();
@@ -97,9 +130,11 @@ async function addNewData(news, sourceSite) {
 exports.scrapeGooglePubSub = functions.pubsub.topic('my-topic').onPublish(async (message) => {
 
     try {
-        const news = await scrapeNews();
+        const newsBBC = await scrapeNews();
+        const newsSoccerKing = await scrapeSoccerKing();
 
-        console.log(news);
+        const combinedNews = newsBBC.concat(newsSoccerKing);
+        console.log(combinedNews);
 
     } catch (error) {
         console.error(error);
