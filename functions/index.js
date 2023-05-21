@@ -15,12 +15,25 @@ const admin = require('firebase-admin');
 admin.initializeApp(functions.config().firebase);
 exports.scrapeGoogle = functions.https.onRequest(async (req, res) => {
     try {
-        const browser = await puppeteer.launch();
-        const page = await browser.newPage();
+        const news = await scrapeNews();
+        console.log(news);
 
+
+
+        res.status(200).send(news);
+    } catch (error) {
+        console.error(error);
+        res.status(500).send('Error scraping data');
+    }
+});
+
+async function scrapeNews() {
+    const browser = await puppeteer.launch();
+    const page = await browser.newPage();
+
+    try {
         await page.goto('https://www.bbc.com/sport/football', { waitUntil: 'networkidle2' });
 
-        // ニュースの見出しと画像URLを取得する
         const news = await page.$$eval('.gs-c-promo', newsList => {
             return newsList.map(news => {
                 const headline = news.querySelector('.gs-c-promo-heading__title').textContent;
@@ -31,27 +44,20 @@ exports.scrapeGoogle = functions.https.onRequest(async (req, res) => {
                 const summary = summaryElement ? summaryElement.textContent : null;
 
                 if (!imgElement) {
-                    return null; // 画像がない場合はnullを返す
+                    return null;
                 }
 
                 return { headline, img, url, summary };
-            }).filter(news => news !== null); // nullの要素を除外する
+            }).filter(news => news !== null);
         });
-
-        console.log(news);
-
-        // ブラウザを閉じる
+        await addNewData(news, "www.bbc.com");
+        return news;
+    } finally {
+        await page.close();
         await browser.close();
-
-        // Firestoreにデータを登録する
-        await addNewData(news,"www.bbc.com");
-
-        res.status(200).send(news);
-    } catch (error) {
-        console.error(error);
-        res.status(500).send('Error scraping data');
     }
-});
+}
+
 
 async function addNewData(news, sourceSite) {
     try {
@@ -89,32 +95,11 @@ async function addNewData(news, sourceSite) {
 }
 
 exports.scrapeGooglePubSub = functions.pubsub.topic('my-topic').onPublish(async (message) => {
+
     try {
-        const browser = await puppeteer.launch();
-        const page = await browser.newPage();
-
-        await page.goto('https://www.bbc.com/sport/football', { waitUntil: 'networkidle2' });
-
-        // ニュースの見出しと画像URLを取得する
-        const news = await page.$$eval('.gs-c-promo', newsList => {
-            return newsList.map(news => {
-                const headline = news.querySelector('.gs-c-promo-heading__title').textContent;
-                const img = news.querySelector('img[srcset]') ? news.querySelector('img[srcset]').srcset.split(' ')[0] : null;
-                const url = news.querySelector('a[href]').href;
-                const summary = news.querySelector('.gs-c-promo-summary') ? news.querySelector('.gs-c-promo-summary').textContent : null;
-
-                return { headline, img, url, summary };
-            });
-        });
+        const news = await scrapeNews();
 
         console.log(news);
-
-        // ブラウザを閉じる
-        await browser.close();
-
-        // Firestoreにデータを登録する
-        await addNewData(news);
-
 
     } catch (error) {
         console.error(error);
