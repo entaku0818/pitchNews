@@ -24,12 +24,18 @@ exports.scrapeGoogle = functions.https.onRequest(async (req, res) => {
         const news = await page.$$eval('.gs-c-promo', newsList => {
             return newsList.map(news => {
                 const headline = news.querySelector('.gs-c-promo-heading__title').textContent;
-                const img = news.querySelector('img[srcset]') ? news.querySelector('img[srcset]').srcset.split(' ')[0] : null;
+                const imgElement = news.querySelector('img[srcset]');
+                const img = imgElement ? imgElement.srcset.split(' ')[0] : null;
                 const url = news.querySelector('a[href]').href;
-                const summary = news.querySelector('.gs-c-promo-summary') ? news.querySelector('.gs-c-promo-summary').textContent : null;
+                const summaryElement = news.querySelector('.gs-c-promo-summary');
+                const summary = summaryElement ? summaryElement.textContent : null;
+
+                if (!imgElement) {
+                    return null; // 画像がない場合はnullを返す
+                }
 
                 return { headline, img, url, summary };
-            });
+            }).filter(news => news !== null); // nullの要素を除外する
         });
 
         console.log(news);
@@ -38,7 +44,7 @@ exports.scrapeGoogle = functions.https.onRequest(async (req, res) => {
         await browser.close();
 
         // Firestoreにデータを登録する
-        await addNewData(news);
+        await addNewData(news,"www.bbc.com");
 
         res.status(200).send(news);
     } catch (error) {
@@ -47,7 +53,7 @@ exports.scrapeGoogle = functions.https.onRequest(async (req, res) => {
     }
 });
 
-async function addNewData(news) {
+async function addNewData(news, sourceSite) {
     try {
         // Firestoreコレクションを参照
         const collectionRef = admin.firestore().collection('books');
@@ -59,6 +65,7 @@ async function addNewData(news) {
                 imageUrl: article.img,
                 url: article.url,
                 description: article.summary,
+                sourceSite: sourceSite,
             });
             const data = await docRef.get();
             console.log(`Data added with ID: ${docRef.id} -> ${JSON.stringify(data.data())}`);
@@ -105,15 +112,3 @@ exports.scrapeGooglePubSub = functions.pubsub.topic('my-topic').onPublish(async 
     }
 });
 
-exports.testScrapeGooglePubSub = functions.https.onRequest(async (req, res) => {
-
-    try {
-        // テスト用のPub/Subメッセージを作成してトリガーを呼び出す
-        await exports.scrapeGooglePubSub("");
-
-        res.status(200).send('Pub/Sub function triggered successfully.');
-    } catch (error) {
-        console.error(error);
-        res.status(500).send('Error triggering Pub/Sub function.');
-    }
-});
