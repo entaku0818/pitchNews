@@ -114,6 +114,7 @@ async function addNewData(news, sourceSite) {
                 url: url,
                 description: article.summary,
                 sourceSite: sourceSite,
+                createdAt: admin.firestore.FieldValue.serverTimestamp()
             });
 
             const data = await docRef.get();
