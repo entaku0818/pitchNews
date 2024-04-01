@@ -143,3 +143,52 @@ exports.scrapeGooglePubSub = functions.pubsub.topic('my-topic').onPublish(async 
     }
 });
 
+exports.fetchAndSaveResults = functions.https.onRequest(async (req, res) => {
+    const url = 'https://api-football-v1.p.rapidapi.com/v3/fixtures?league=39&season=2023';
+    const options = {
+      method: 'GET',
+      headers: {
+        'X-RapidAPI-Key': '5306d81378msh9bc45e675c00cb3p14a5fajsnef007b957620',
+        'X-RapidAPI-Host': 'api-football-v1.p.rapidapi.com'
+      }
+    };
+  
+    try {
+      const response = await fetch(url, options);
+      const result = await response.json();
+      const fixtureData = result.response;
+  
+      const fixtureInfos = [];
+  
+      // fixtureDataの各要素をループして情報を抽出
+      fixtureData.forEach(fixture => {
+        // 試合時間の情報を抽出
+        const kickoffTime = fixture.fixture.date;
+        const duration = fixture.fixture.status.elapsed;
+  
+        // チームとスコア、アイコン、試合時間の情報を抽出
+        const fixtureInfo = {
+          homeTeam: fixture.teams.home.name,
+          awayTeam: fixture.teams.away.name,
+          homeTeamLogo: fixture.teams.home.logo,
+          awayTeamLogo: fixture.teams.away.logo,
+          homeScore: fixture.goals.home,
+          awayScore: fixture.goals.away,
+          kickoffTime: kickoffTime,
+          duration: duration
+        };
+  
+        // 抽出した情報を配列に追加
+        fixtureInfos.push(fixtureInfo);
+      });
+  
+      // データをFirestoreに保存する
+      await admin.firestore().collection('matchResults').doc('2023').set({ fixtures: fixtureInfos });
+  
+      res.status(200).send('Match results fetched and saved successfully!');
+    } catch (error) {
+      console.error(error);
+      res.status(500).send('Error fetching and saving match results');
+    }
+  });
+  
