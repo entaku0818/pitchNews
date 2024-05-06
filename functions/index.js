@@ -192,3 +192,38 @@ exports.fetchAndSaveResults = functions.https.onRequest(async (req, res) => {
     }
   });
   
+
+  exports.fetchAndSaveYouTubeResults = functions.https.onRequest(async (req, res) => {
+    const playlistItemId = "PLDfB2rHFTxIv2VwVZVJ-lAP-SpoMf1zfM";
+    const apiKey = "AIzaSyAMrtky6JDeKjTSCq4hqRFNeO1pFpGheSM"; 
+
+    const apiUrl = `https://www.googleapis.com/youtube/v3/playlistItems?playlistId=${playlistItemId}&maxResults=100&key=${apiKey}&part=snippet,contentDetails`;
+
+    try {
+        const response = await fetch(apiUrl);
+        const result = await response.json();
+
+        // Check if the result contains items
+        if (result.items && result.items.length > 0) {
+            const playlistItems = result.items;
+
+            // Iterate through each playlist item and save to Firestore
+            for (const playlistItem of playlistItems) {
+                const videoId = playlistItem.snippet.resourceId.videoId;
+                const videoPublishedAt = playlistItem.contentDetails.videoPublishedAt;
+
+                await admin.firestore().collection('youtubeVideos').doc(videoId).set({
+                    videoId: videoId,
+                    publishedAt: videoPublishedAt
+                });
+            }
+
+            res.status(200).send('YouTube video data fetched and saved successfully!');
+        } else {
+            res.status(404).send('No YouTube playlist items found.');
+        }
+    } catch (error) {
+        console.error(error);
+        res.status(500).send('Error fetching and saving YouTube video data');
+    }
+});
