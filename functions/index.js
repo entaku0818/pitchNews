@@ -168,6 +168,7 @@ exports.fetchAndSaveResults = functions.https.onRequest(async (req, res) => {
   
         // チームとスコア、アイコン、試合時間の情報を抽出
         const fixtureInfo = {
+            id: fixture.fixture.id,
           homeTeam: fixture.teams.home.name,
           awayTeam: fixture.teams.away.name,
           homeTeamLogo: fixture.teams.home.logo,
@@ -183,8 +184,11 @@ exports.fetchAndSaveResults = functions.https.onRequest(async (req, res) => {
       });
   
       // データをFirestoreに保存する
-      await admin.firestore().collection('matchResults').doc('2023').set({ fixtures: fixtureInfos });
-  
+      await admin.firestore()
+      .collection('matchResults')
+      .doc("39") 
+      .set({ "2023_2024": fixtureInfos });
+        
       res.status(200).send('Match results fetched and saved successfully!');
     } catch (error) {
       console.error(error);
@@ -226,4 +230,68 @@ exports.fetchAndSaveResults = functions.https.onRequest(async (req, res) => {
         console.error(error);
         res.status(500).send('Error fetching and saving YouTube video data');
     }
+});
+
+
+
+exports.fetchAndSaveFixtureStatistics = functions.https.onRequest(async (req, res) => {
+    // FirestoreからすべてのfixtureIdを取得
+    const docRef = admin.firestore().collection('matchResults').doc("39");
+    const doc = await docRef.get();
+
+    if (!doc.exists) {
+      res.status(404).send('No document found.');
+    } else {
+      // ドキュメントが存在する場合、必要なデータを抽出
+      const data = doc.data();
+      const fixtureInfos = data["2023-2024"]; // 2023-2024 シーズンのデータを取得
+      const fixtureIds = fixtureInfos.map(f => f.id); // fixtureIdsを抽出
+
+      for (let fixtureId of fixtureIds) {
+        fixtureId = String(fixtureId);
+
+        const url = `https://api-football-v1.p.rapidapi.com/v3/fixtures/statistics?fixture=${fixtureId}`;
+        const options = {
+            method: 'GET',
+            headers: {
+                'X-RapidAPI-Key': '5306d81378msh9bc45e675c00cb3p14a5fajsnef007b957620',
+                'X-RapidAPI-Host': 'api-football-v1.p.rapidapi.com'
+            }
+        };
+
+        try {
+            const response = await fetch(url, options);
+            const result = await response.json();
+            if (!result.response || result.response.length === 0) {
+                throw new Error('No statistics data found for fixture ID: ' + fixtureId);
+            }
+
+            const statisticsInfos = result.response.map(teamStat => {
+                if (!teamStat.team || !teamStat.statistics) {
+                    throw new Error('Invalid data structure for team statistics');
+                }
+
+                return {
+                    teamId: teamStat.team.id,
+                    teamName: teamStat.team.name,
+                    teamLogo: teamStat.team.logo,
+                    statistics: teamStat.statistics.map(stat => ({
+                        type: stat.type,
+                        value: stat.value !== null ? stat.value : "N/A"  // Handling null values
+                    }))
+                };
+            });
+
+            await admin.firestore().collection('fixtureStatistics').doc(fixtureId).set({ teams: statisticsInfos });
+        } catch (error) {
+            console.error('Error fetching or processing data for fixture:', fixtureId, error);
+            return res.status(500).send('Error processing fixture ID ' + fixtureId + ': ' + error.message);
+        }
+    }
+    }
+
+    // 各fixtureIdに対して統計を取得し保存
+
+
+    res.status(200).send('All fixture statistics fetched and saved successfully!');
 });
